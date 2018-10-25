@@ -24,6 +24,6 @@ Run Example
 -------
 
 ```
-  $ docker run codermaze/alpine-node:4 node --version
-  $ docker run codermaze/alpine-node:4 npm --version
+  $ docker run codermaze/alpine-node:10.12.0 node --version
+  $ docker run codermaze/alpine-node:10.12.0 npm --version
 ```
