@@ -1,8 +1,12 @@
-FROM alpine:3.4
+
+FROM alpine:3.8
 
 ARG NODE_VERSION=v10.12.0
 ARG NPM_VERSION=6.4.1
-ENV VERSION=$NODE_VERSION NPM_VERSION=$NPM_VERSION CONFIG_FLAGS="--fully-static" DEL_PKGS="libgcc libstdc++" RM_DIRS=/usr/include
+ARG ALPINE_VERSION=3.8
+ARG YARN_VERSION=latest
+
+ENV VERSION=$NODE_VERSION NPM_VERSION=$NPM_VERSION ALPINE_VERSION=$ALPINE_VERSION YARN_VERSION=$YARN_VERSION CONFIG_FLAGS="--fully-static" DEL_PKGS="libgcc libstdc++" RM_DIRS=/usr/include
 
 # ENV VERSION=v5.10.1 NPM_VERSION=3
 
@@ -10,32 +14,47 @@ ENV VERSION=$NODE_VERSION NPM_VERSION=$NPM_VERSION CONFIG_FLAGS="--fully-static"
 # ENV CONFIG_FLAGS="--without-npm" RM_DIRS=/usr/include
 # ENV CONFIG_FLAGS="--fully-static" DEL_PKGS="libgcc libstdc++" RM_DIRS=/usr/include
 
-RUN apk add --no-cache curl make gcc g++ binutils-gold python linux-headers paxctl libgcc libstdc++ gnupg && \
-  gpg --keyserver pool.sks-keyservers.net --recv-keys 9554F04D7259F04124DE6B476D5A82AC7E37093B && \
-  gpg --keyserver pool.sks-keyservers.net --recv-keys 94AE36675C464D64BAFA68DD7434390BDBE9B9C5 && \
-  gpg --keyserver pool.sks-keyservers.net --recv-keys 0034A06D9D9B0064CE8ADF6BF1747F4AD2306D93 && \
-  gpg --keyserver pool.sks-keyservers.net --recv-keys FD3A5288F042B6850C66B31F09FE44734EB7990E && \
-  gpg --keyserver pool.sks-keyservers.net --recv-keys 71DCFD284A79C3B38668286BC97EC7A07EDE3FC1 && \
-  gpg --keyserver pool.sks-keyservers.net --recv-keys DD8F2338BAE7501E3DD5AC78C273792F7D83545D && \
-  gpg --keyserver pool.sks-keyservers.net --recv-keys C4F0DFFF4E8C1A8236409D08E73BC641CC11F4C8 && \
-  gpg --keyserver pool.sks-keyservers.net --recv-keys B9AE9905FFD7803F25714661B63B535A4C206CA9 && \
-  curl -o node-${VERSION}.tar.gz -sSL https://nodejs.org/dist/${VERSION}/node-${VERSION}.tar.gz && \
-  curl -o SHASUMS256.txt.asc -sSL https://nodejs.org/dist/${VERSION}/SHASUMS256.txt.asc && \
-  gpg --verify SHASUMS256.txt.asc && \
-  grep node-${VERSION}.tar.gz SHASUMS256.txt.asc | sha256sum -c - && \
-  tar -zxf node-${VERSION}.tar.gz && \
-  cd /node-${VERSION} && \
+RUN apk add --no-cache curl make gcc g++ python linux-headers binutils-gold gnupg libstdc++ && \
+  for server in ipv4.pool.sks-keyservers.net keyserver.pgp.com ha.pool.sks-keyservers.net; do \
+    gpg --keyserver $server --recv-keys \
+      94AE36675C464D64BAFA68DD7434390BDBE9B9C5 \
+      B9AE9905FFD7803F25714661B63B535A4C206CA9 \
+      77984A986EBC2AA786BC0F66B01FBB92821C587A \
+      71DCFD284A79C3B38668286BC97EC7A07EDE3FC1 \
+      FD3A5288F042B6850C66B31F09FE44734EB7990E \
+      8FCCA13FEF1D0C2E91008E09770F7A9A5AE15600 \
+      C4F0DFFF4E8C1A8236409D08E73BC641CC11F4C8 \
+      DD8F2338BAE7501E3DD5AC78C273792F7D83545D && break; \
+  done && \
+  curl -sfSLO https://nodejs.org/dist/${VERSION}/node-${VERSION}.tar.xz && \
+  curl -sfSL https://nodejs.org/dist/${VERSION}/SHASUMS256.txt.asc | gpg --batch --decrypt | \
+    grep " node-${VERSION}.tar.xz\$" | sha256sum -c | grep ': OK$' && \
+  tar -xf node-${VERSION}.tar.xz && \
+  cd node-${VERSION} && \
   ./configure --prefix=/usr ${CONFIG_FLAGS} && \
-  make -j$(grep -c ^processor /proc/cpuinfo 2>/dev/null || 1) && \
+  make -j$(getconf _NPROCESSORS_ONLN) && \
   make install && \
-  paxctl -cm /usr/bin/node && \
   cd / && \
-  if [ -x /usr/bin/npm ]; then \
-    npm install -g npm@${NPM_VERSION} && \
-    npm install -g yarn && \
+  if [ -z "$CONFIG_FLAGS" ]; then \
+    if [ -n "$NPM_VERSION" ]; then \
+      npm install -g npm@${NPM_VERSION}; \
+    fi; \
     find /usr/lib/node_modules/npm -name test -o -name .bin -type d | xargs rm -rf; \
+    if [ -n "$YARN_VERSION" ]; then \
+      for server in ipv4.pool.sks-keyservers.net keyserver.pgp.com ha.pool.sks-keyservers.net; do \
+        gpg --keyserver $server --recv-keys \
+          6A010C5166006599AA17F08146C2130DFD2497F5 && break; \
+      done && \
+      curl -sfSL -O https://yarnpkg.com/${YARN_VERSION}.tar.gz -O https://yarnpkg.com/${YARN_VERSION}.tar.gz.asc && \
+      gpg --batch --verify ${YARN_VERSION}.tar.gz.asc ${YARN_VERSION}.tar.gz && \
+      mkdir /usr/local/share/yarn && \
+      tar -xf ${YARN_VERSION}.tar.gz -C /usr/local/share/yarn --strip 1 && \
+      ln -s /usr/local/share/yarn/bin/yarn /usr/local/bin/ && \
+      ln -s /usr/local/share/yarn/bin/yarnpkg /usr/local/bin/ && \
+      rm ${YARN_VERSION}.tar.gz*; \
+    fi; \
   fi && \
-  apk del curl make gcc g++ binutils-gold python linux-headers paxctl gnupg ${DEL_PKGS} && \
-  rm -rf /etc/ssl /node-${VERSION}.tar.gz /SHASUMS256.txt.asc /node-${VERSION} ${RM_DIRS} \
-    /usr/share/man /tmp/* /var/cache/apk/* /root/.npm /root/.node-gyp /root/.gnupg \
-    /usr/lib/node_modules/npm/man /usr/lib/node_modules/npm/doc /usr/lib/node_modules/npm/html
+  apk del curl make gcc g++ python linux-headers binutils-gold gnupg ${DEL_PKGS} && \
+  rm -rf ${RM_DIRS} /node-${VERSION}* /usr/share/man /tmp/* /var/cache/apk/* \
+    /root/.npm /root/.node-gyp /root/.gnupg /usr/lib/node_modules/npm/man \
+    /usr/lib/node_modules/npm/doc /usr/lib/node_modules/npm/html /usr/lib/node_modules/npm/scripts

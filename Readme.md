@@ -12,12 +12,12 @@ The script _build.sh_ will build the docker image. Arguments can be passed to th
 
 Default Versions
 
-- NODE_VERSION=4.4.3
-- NPM_VERSION=3
+- NODE_VERSION=10.12.0
+- NPM_VERSION=6.4.1
 
 __COMMAND__
 ```
-$ ./build.sh 4.4.3 3
+$ ./build.sh 10.12.0 6.4.1
 ```
 
 Run Example
